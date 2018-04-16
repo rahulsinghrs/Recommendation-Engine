@@ -1,0 +1,353 @@
+# IE - Master in Business Analytics and Big Data
+Recommendation Systems
+
+Building a Non Personalized Recommendation Engine
+
+Author: Rahul Singh
+
+========================================================
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Initialization
+
+Import libraries
+
+```{r}
+library(plyr)
+library(dplyr)
+library(tibble)
+library(stats)
+library(stringr) #to clean movie lens dataset; white-space etc
+library(tidyr) #for extract function used in data cleaning in Movielens
+library(lubridate) #to clean tags dataset in Movielens
+library(reshape2)
+library(ggplot2)
+```
+
+Load the critics dataset.
+
+```{r}
+rm(list=ls()) #to remove previously existing data in the R memory
+critics<-read.csv("~/Desktop/Build Collaborative Recommendation Engine/IE-Lab1-Package/Data/critics.csv",check.names=FALSE) #inputing dataset in data frame
+```
+
+# 1) Top 5 Movies, by rating mean
+Calculate mean rating for each movie, ordered with the highest rating listed first, and plot the top 5.
+
+**Expected result**:
+3.600000, 'The Shawshank Redemption'
+3.266667, 'Star Wars IV - A New Hope'
+3.222222, 'Blade Runner'
+3.166667, 'Groundhog Day'
+3.062500, 'The Silence of the Lambs'
+
+
+```{r fig.width=7, fig.height=6}
+#dropping the user name column
+critics<-critics %>% select(-User) 
+
+#calculating mean rating for each movie
+mean_rating<- critics %>%  summarise_at(vars(colnames(.)),funs(mean(., na.rm=TRUE))) 
+
+#saving column names
+col=as.data.frame(colnames(mean_rating)) 
+
+#transposing mean_rating and storing it as data frame
+t_mean_rating<-as.data.frame(t(mean_rating))
+
+#binding the transposed mean ratings and column names
+final_mean_ratings<-cbind(t_mean_rating,col)
+final_mean_ratings<-as.data.frame(final_mean_ratings)
+
+#renaming the final mean ratings dataframe
+colnames(final_mean_ratings)[1] <- "Avg_Rating"
+colnames(final_mean_ratings)[2] <- "Movie"
+
+#arranging the ratings in descending order and printing out the head with n=5 of result
+result<- arrange(final_mean_ratings,desc(Avg_Rating))
+result<-head(result, n=5)
+print(result)
+```
+
+# 2) Top 5 Movies, by rating distribution
+Calculate the percentage of ratings for each movie that are 4 stars or higher. Order with the highest percentage first, and plot the top 5 movies with more high ratings distribution.
+
+**Expected result**:
+0.7000000, 'The Shawshank Redemption'
+0.5333333, 'Star Wars IV - A New Hope'
+0.5000000, 'Gladiator'
+0.4444444, 'Blade Runner'
+0.4375000, 'The Silence of the Lambs'
+
+```{r fig.width=7, fig.height=6}
+#we have created new_data so that in case we want to transform the data to binary matrix in Q4 
+#we don' change the original dataset 'critics'
+new_data<- critics 
+
+a<-summary(new_data>3) #to view roughly how many values are 4s and 5s; and NA
+
+#to have a transposed dataframe called 'counting_frequencies' 
+#and converting values to factores with five levels using apply function
+counting_frequencies<-as.data.frame(t(apply(new_data, 2, function(x) table(factor(x, levels=1:5)))))
+
+#counting frequencies in the new data.frame using rowSums and storing the values in a new columns called 'quantity_of_ratings'
+counting_frequencies$quantity_of_ratings <- rowSums(counting_frequencies[1:5])
+
+#getting frequencies for 4 or 5 and storing the number in a new column 'rating_4_or_5'
+counting_frequencies$rating_4_or_5 <- rowSums(counting_frequencies[4:5])
+
+#creating a new column called 'high_rating_distribution' and computing the frequencies
+counting_frequencies$high_rating_distribution <- counting_frequencies[7]/counting_frequencies[6]
+
+#now we have counting_frequencies with new columns of interest stored as a dataframe matrix
+counting_frequencies<-as.data.frame.matrix(counting_frequencies)
+
+#see the data frame created so far, we print it
+print(head(counting_frequencies, n=5))
+
+```
+
+```{r}
+#we need to unlist the newly created column called 'high_rating_distribution'
+#we take the previous data frame matrix 'counting_frequencies' and convert it to a new dataframe called 'counting_frequencies_1'
+#the values are stored as numeric
+counting_frequencies_1<-transform(counting_frequencies, high_rating_distribution = as.numeric(unlist(high_rating_distribution)))
+
+#order the data frame counting_frequencies_1 by high_rating_distribution column 
+#store the results in a new dataframe called counting_frequencies_2
+counting_frequencies_2<-counting_frequencies_1[order(counting_frequencies_1$high_rating_distribution, decreasing = TRUE),]
+
+#adding column name "Movie" and storing the results in a new dataframe called counting_frequencies_3
+counting_frequencies_3<- rownames_to_column(counting_frequencies_2, "Movie")
+
+#Storing the values in a new data frame called counting_frequencies_4 and excluding columns 2 to 8
+#This is the final result
+counting_frequencies_4<- counting_frequencies_3[-c(2:8)]
+print(head(counting_frequencies_4,n=5))
+```
+
+# 3) Top 5 Movies, by quantity of ratings
+Count the number of ratings for each movie, order the one with most number of ratings first, submit the top 5.
+
+**Expected result**:
+17, 'Toy Story'
+16, 'The Silence of the Lambs'
+15, 'Star Wars IV - A New Hope'
+14, 'Star Wars VI - Return of the Jedi'
+13, 'Independence Day'
+
+```{r fig.width=7, fig.height=6}
+#we can use the counting_frequencies_3 dataframe previously created in question 2 to answer this question
+#let's print the head of 
+print(head(counting_frequencies_3,n=5)) #notice we are interested in column quantity_of_ratings
+
+#order counting_frequencies_3 according to decreasing order in column called quantity_of_ratings
+#store results in a new data frame called 'quantity'
+quantity<-counting_frequencies_3[order(counting_frequencies_3$quantity_of_ratings, decreasing = TRUE),]
+
+#remove columns that are not needed to get the final result
+quantity_1<- quantity[-c(2:6,8,9)]
+
+#we are putting the row.names to null in order to remove duplication in a column which already has the row names in it
+row.names(quantity_1)<-NULL
+
+#printing the final results for top 5
+print(head(quantity_1,n=5))
+```
+
+# 4) People who watched Star Wars IV also watched ...
+Calculate movies that most often occur with other movie. For each movie, calculate the percentage of the other movie raters who also rated that movie. Order with the highest percentage first, and submit the top 5. Select "Star.Wars.IV...A.New.Hope" movie by defaut. Use the (x+y)/x method.
+
+Top Occurences:
+0.9333333, 'Toy Story'
+0.8666667, 'Star Wars: Episode VI - Return of the Jedi'
+0.8000000, 'The Silence of the Lambs'
+0.7333333, 'Independence Day'
+0.6666667, 'Total Recall'
+
+```{r fig.width=7, fig.height=6}
+#we defined the critics dataset as new_data in Q2 and now we will use this data; 
+#notice this does not have names of users; we removed it in Q1
+#we want to convert new_data to a binary matrix by replacing NA values with 0 and positions where ratings are given with 1
+new_data[new_data!=0] <-  1
+new_data[is.na(new_data)] <- 0
+
+#we call this data frame as 'binary_dataframe'
+binary_dataframe<-new_data
+
+#storing the column sums to a vector called sums
+sums <- colSums(binary_dataframe)
+
+#converting the binary_dataframe to 'as.data.frame' to ensure correct types of values in binary_dataframe
+df<-as.data.frame(binary_dataframe)
+
+#initializing n empty matrix where we will store the results
+A <- data.frame(matrix(ncol = ncol(df), nrow = nrow(df)))
+
+#to obtain values using count(x and y)/ count(x)
+#first row represent relative association with respect to first movie
+for (j in 1:ncol(df)) {
+  for (i in 1:ncol(df)) { 
+    A[i,j] = (length(which(df[i] == df[j] & df[i]!=0 & df[j]!=0)))/ sum(df[i])
+  }
+}
+  
+# Vector 'col' has the movie names stored in it
+#we subset the first row of matrix A that has our results in vector called 'results'
+results=rbind(colnames(binary_dataframe),A[1,])
+results=t(results)
+```
+
+```{r}
+#unlisting the results list and storing it as dataframe df
+df <- data.frame(matrix(unlist(results), nrow=20,ncol=2, byrow=F),stringsAsFactors=FALSE)
+
+#sorting the dataframe by descending order
+df_1 <- arrange(df,desc(X2))
+
+#subsetting the top results from df_1 to df_2
+df_2<-df_1[2:6,c(1,2)]
+
+#putting the rownames as null
+rownames(df_2) <- NULL
+
+#printing the top 5 results excluding the first row because it is the "Star.Wars.IV...A.New.Hope" movie itself
+print(df_2,row.names=FALSE)
+```
+
+# 5) People who liked Babe also liked ...
+Calculate the movies better rated of people who liked a movie. Select the people who liked the movie "Babe" (4 or 5 stars) and provide the top 5 movies they liked most.
+
+**Expected result**:
+5.000, 'Pulp.Fiction'
+5.000, 'Groundhog.Day'
+4.500, 'The.Shawshank.Redemption'
+4.333, 'Toy.Story'
+4.000, 'Blade.Runner'
+
+```{r}
+new_list <- list()
+print_list<- list()
+
+for(j in 1:ncol(critics)){
+  
+  new_list[[paste0("code_",j,sep="")]]<-colSums((critics %>% filter(.[j]>=4) ), na.rm=TRUE)/colSums(!is.na((critics %>% filter(.[j]>=4) )))
+  
+  new_list[[paste0("code_",j,sep="")]]<-new_list[[paste0("code_",j,sep="")]][-j] #removing the movie itself eg Babe vs Babe
+  
+  print_list[[paste0("print_",j,sep="")]] = new_list[[paste0("code_",j,sep="")]][order(new_list[[paste0("code_",j,sep="")]], decreasing=TRUE)[1:5]] #creating a list of lists with sub-list 20 is for Babe
+  
+}
+
+#print sub-list 20 for Babe
+print(print_list[[20]])
+```
+
+
+# 6) MovieLens
+Explore a real data set and provide non-personalized ratings. You can use the MovieLens database. You can find MovieLens' dataset here: http://files.grouplens.org/datasets/movielens/ml-10m-README.html
+
+```{r}
+
+#small dataset of Movielens dataset was downloaded and stored in the following variables
+links<-read.csv("~/Desktop/Build Collaborative Recommendation Engine/IE-Lab1-Package/Building a Non Personalized Recommendation/MovieLens Data/ml-latest-small/links.csv")
+
+movies<-read.csv("~/Desktop/Build Collaborative Recommendation Engine/IE-Lab1-Package/Building a Non Personalized Recommendation/MovieLens Data/ml-latest-small/movies.csv", stringsAsFactors=FALSE)
+
+ratings<-read.csv("~/Desktop/Build Collaborative Recommendation Engine/IE-Lab1-Package/Building a Non Personalized Recommendation/MovieLens Data/ml-latest-small/ratings.csv")
+
+tags<-read.csv("~/Desktop/Build Collaborative Recommendation Engine/IE-Lab1-Package/Building a Non Personalized Recommendation/MovieLens Data/ml-latest-small/tags.csv")
+
+
+```
+
+Printing the structure of Movielens dataset to observe its structure
+```{r}
+str(links)
+```
+```{r}
+str(movies)
+```
+```{r}
+str(ratings)
+```
+
+```{r}
+str(tags)
+```
+```{r}
+#changing the timestamp value in tags using lubridate function called as_datetime
+tags_dataframe <- tags %>% mutate(timestamp = as_datetime(timestamp))
+```
+
+```{r}
+#(1) we trim the white spaces with str_trim() function; (2) split the title to title and year variable;
+#(3) we take out the debut date for the movie; (4) replace NA with the name of the title; (5) drop the timestamp column;
+#(6) we need to put NA to those values which do not have genres
+
+movies_dataframe <- movies %>% mutate(title = str_trim(title)) %>% extract(title, c("title_tmp", "year"), regex = "^(.*) \\(([0-9 \\-]*)\\)$", remove = F) %>% mutate(year = if_else(str_length(year) > 4, as.integer(str_split(year, "-", simplify = T)[1]), as.integer(year))) %>% mutate(title = if_else(is.na(title_tmp), title, title_tmp)) %>% select(-title_tmp)  %>% mutate(genres = if_else(genres == "(no genres listed)", `is.na<-`(genres), genres))
+```
+
+```{r}
+# Number of movies per year/decade
+movies_every_year <- movies_dataframe %>%
+  na.omit() %>% # omit missing values
+  select(movieId, year) %>% # select columns we need
+  group_by(year) %>% # group by year
+  summarise(count = n())  %>% # count movies per year
+  arrange(year)
+```
+
+```{r}
+# plot distribution of ratings
+ggplot(data=ratings, aes(x=rating), aplha=0.8) + geom_histogram() + xlab('Ratings') + ylab('Counts')
+```
+
+```{r}
+# fill missing years
+movies_every_year <- movies_every_year %>% complete(year = full_seq(year, 1), fill = list(count = 0)) 
+#we plot the number of movies for every year and we can observe a clear increase in the movies
+movies_every_year %>% ggplot(aes(x = year, y = count)) + geom_line(color="brown") 
+
+```
+
+```{r}
+#we save the genres which are multiple in number and are separated by |
+#we store the results in genres_dataframe
+genres_dataframe <- movies_dataframe %>% separate_rows(genres, sep = "\\|") %>% group_by(genres) %>% summarise(number = n()) %>% arrange(desc(number))
+```
+
+```{r}
+#we change the timestamp column to proper readable format
+ratings_dataframe <- ratings %>% mutate(timestamp = as_datetime(timestamp))
+
+#we join ratings_dataframe to movie_dataframe with movieID as key and omit na rows; then we select four columns of our interest
+average_rating <- ratings_dataframe %>% inner_join(movies_dataframe, by = "movieId") %>% na.omit() %>% select(movieId, title, rating, year) %>% group_by(movieId, title, year) %>% summarise(count = n(), mean = mean(rating), min = min(rating), max = max(rating)) %>% ungroup() %>% arrange(desc(mean))
+
+print(head(average_rating, n=20))
+```
+
+```{r}
+#create a function to comput the weighted rating for non personalized recommendation 
+# RATING = average for the movie mean 
+# VOTES_COUNT = count of votes for the movie
+# MINIMUM_NEEDED = minimum votes required to be listed in the Top 250
+# MEAN_ENTIRE = the mean vote across the entire dataset
+weighted_rating_for_non_personalized <- function(RATING, VOTES_COUNT, MINIMUM_NEEDED, MEAN_ENTIRE) {
+  return (VOTES_COUNT/(VOTES_COUNT+MINIMUM_NEEDED))*RATING + (MINIMUM_NEEDED/(VOTES_COUNT+MINIMUM_NEEDED))*MEAN_ENTIRE
+}
+
+#apply this function to obtain average_rating
+average_rating <- average_rating %>% mutate(wr = weighted_rating_for_non_personalized(mean, count, 500, mean(mean))) %>% arrange(desc(wr))
+print(head(average_rating, n=20))
+```
+
+
+
+
+
+

@@ -1,0 +1,184 @@
+# IE - Master in Business Analytics and Big Data
+Recommendation Systems
+
+Building a Collaborative Filtering Engine
+
+Author: Rahul Singh
+
+========================================================
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Initialization
+
+Import libraries
+
+```{r}
+library(plyr)
+library(stats)
+library(ggpubr) #to plot scatter plots between Pearson Coefficients of two user we need this package
+```
+
+Load the critics dataset.
+
+```{r}
+rm(list=ls()) #to remove previously existing data in the R memory
+
+#inputing dataset in data frame
+critics<-read.csv("~/Desktop/Build Collaborative Recommendation Engine/IE-Lab1-Package/Data/critics.csv",check.names=FALSE) 
+```
+
+# 1) Pearson correlation coefficient 
+Calculate the Pearson correlation coefficient between Victoria and Nuria
+
+**Expected correlation between Victoria and Nuria**: 0.3651484
+
+```{r fig.width=7, fig.height=6}
+critics_t <- data.frame(t(critics)) #transpose the dataframe critics
+
+#sane the transposed critics_t as character because after transposing its format gets changed
+#user names are also not seen in the transposed critics_t
+critics_t[] <- lapply(critics_t, as.character)
+
+#extract the row names from critics 1st row and save it as colnames of transposed dataframe called critics_t
+colnames(critics_t) <- critics_t[1, ]
+
+#drop the name of the movies in critics_t first column
+critics_t <- critics_t[-1 ,]
+
+#convert the values back to numeric from character
+critics_t[] <- lapply(critics_t, function(x) as.numeric(as.character(x))) #now our dataframe is numeric
+
+#correlation of Victoria and Nuria
+print(cor(critics_t$Victoria,critics_t$Nuria, use = "complete.obs")) #correlation of Victoria and Nuria
+```
+
+# 2) Compare two movie critics
+Using the calculated Pearson correlation in the previous section. Compare and show the movie ratings for Victoria and Nuria on a scatter plot. How is this compared with the same ratings of Maria and Nerea on a scatter plot? What about Chris and Jim? What it means?
+
+```{r}
+#ggscatter function with cor.method as "pearson" does a scatter plot for the movie ratings for Victoria and Nuria
+#notice that in x axis we are plotting Victoria's and y axis Nuria's ratings
+#grey area also shows the confidence interval with a regression line
+
+#the relation is low; this means that their ratings are not that similar
+
+ggscatter(critics_t, x = "Victoria", y = "Nuria",
+          add = "reg.line", conf.int = TRUE,
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Victoria", ylab = "Nuria")
+```
+
+```{r}
+#we do the same as above and observe that Maria and Nerea have negative correlation
+ggscatter(critics_t, x = "Maria", y = "Nerea",
+          add = "reg.line", conf.int = TRUE,
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Maria", ylab = "Nerea")
+```
+
+```{r}
+#Chris and Jim have a higher positive correlation; this shows that their movie ratings have a similarity of nearly 83 percent
+
+ggscatter(critics_t, x = "Chris", y = "Jim",
+          add = "reg.line", conf.int = TRUE,
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Chris", ylab = "Jim")
+```
+
+
+# 3) Top Recommendations 
+Get the top 5 movies recommended for Victoria. by using a weighted average of every other critic's rankings.
+
+**Expected result**:
+'The Matrix'
+'Forrest Gump'     
+'The Sixth Sense' 
+'Shakespeare in Love'
+'Blade Runner'
+
+```{r}
+correlation_matrix=cor(critics_t, use = "pairwise.complete.obs")
+row_names= row.names(critics_t)
+col_names= colnames(critics_t)
+
+correlation_Victoria_with_others= correlation_matrix[,15]
+rows_to_select<- which(is.na(critics_t["Victoria"])) #gives location of NA 
+#and we can look at who else has rated the movie which Victoria has not rated
+
+matrix_1= matrix(, nrow = 20, ncol = 20)
+
+j=1
+for (j in rows_to_select){ 
+  #j only selects those movies for which Victoria has not rated
+  for (i in 1:20) {
+      if (i!=15) { #i!=15 helps not select Victoria's column
+        #in this we calculate the difference of user's rating in each cell 
+        # (contd.) minus his/her average user rating times Pearson coef/sum of absolute values of Pearson coeff
+      matrix_1[i,j] <- ((critics_t[j,i]- colMeans(critics_t[i], na.rm=T)) * correlation_Victoria_with_others[i])/sum(abs(correlation_Victoria_with_others)) 
+      }
+    }
+}
+
+```
+
+```{r}
+new_list=colSums(matrix_1, na.rm=T)  #new_list which has sum for each movie's weighted average
+
+#now we are missing adding Victoria's rating to the sum of values to get the predicted score for each movie that Victoria has not rated
+
+#note that zero in the list represent those movie's index for which Victoria has rated
+
+for (i in 1:length(new_list)) {
+  if (new_list[i] ==0) {
+    new_list[i]<- NA
+  }
+}
+
+Victoria_average_rating=colMeans(critics_t[15], na.rm=T)
+
+#adding Victoria's average rating to the values
+new_list<-new_list+Victoria_average_rating
+
+#to print the values with positions which represent the indexes of the movies in the critics_t (transposed matrix)
+print(new_list) 
+```
+
+```{r}
+#order the new_list in decreasing order and extract the movie index
+a<-order(new_list, decreasing=TRUE)
+
+
+#select the top 5 movies recommended for Victoria. by using a weighted average of every other critic's rankings
+a<-a[1:5]
+
+print(row.names(critics_t[a,]))
+```
+
+
+
+
+# 4) Top similar critics
+Return the top 5 critics that are most similar to Victoria. 
+
+**Expected result**:
+0.9449112, 'Rachel'
+0.5976143, 'Ana' 
+0.5789794, 'Oriol'
+0.4925922, 'Maria'
+0.4273247, 'Carles'
+
+```{r fig.width=7, fig.height=6}
+
+top_results<-as.data.frame(correlation_Victoria_with_others)
+top_results$names <- rownames(top_results)
+rownames(top_results)<-NULL
+final<-top_results[order(desc(top_results$correlation_Victoria_with_others)),]
+
+#drop first row as it contans Victoria's correlation with herself which is 1
+final<-final[-1,]
+rownames(final)<-NULL
+print(head(final,n=5))
+```
